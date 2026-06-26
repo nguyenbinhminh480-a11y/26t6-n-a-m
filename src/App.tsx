@@ -57,6 +57,7 @@ import { Draw, Analytics } from "./types";
 import { calculateAnalytics, getSumType } from "./utils/predictor";
 import { ARParams, MLPParams } from "./utils/algorithms";
 import { syncWithGoogleDrive } from "./utils/driveSync";
+import { hapticFeedback } from "./utils/haptics";
 
 import { fetchWithRetry } from "./utils/network";
 import { bottomProfiler } from "./utils/bottomSystemProfiler";
@@ -70,6 +71,7 @@ const clampDice = (v: any): number => {
 import { PredictionTab } from "./components/PredictionTab";
 import { HistoryTab } from "./components/HistoryTab";
 import { AiSystemDashboard } from "./components/AiSystemDashboard";
+import { ManualStringTab } from "./components/ManualStringTab";
 
 // App ID fallback
 const appId = "bingo18-predictor-v8-1";
@@ -168,12 +170,106 @@ export default function App() {
 
   const toastTimerRef = useRef<NodeJS.Timeout | null>(null);
 
+  // TẠI SAO (Why): Trạng thái hiển thị Dashboard Hệ thống giám sát AI Core OS
+  const [showDashboard, setShowDashboard] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("bingo18_show_dashboard") === "true";
+    } catch (e) {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("bingo18_show_dashboard", String(showDashboard));
+    } catch (e) {}
+  }, [showDashboard]);
+
   // Manual entry states
   const [showManualForm, setShowManualForm] = useState(false);
   const [manualId, setManualId] = useState("");
   const [manualNum1, setManualNum1] = useState(1);
   const [manualNum2, setManualNum2] = useState(1);
   const [manualNum3, setManualNum3] = useState(1);
+
+  // Manual TX Draw String states
+  const [stringA, setStringA] = useState<string>(() => {
+    try {
+      return localStorage.getItem("bingo18_tx_string_a") || "TXTXTTXTXXTTX";
+    } catch (e) {
+      return "TXTXTTXTXXTTX";
+    }
+  });
+
+  const [stringB, setStringB] = useState<string>(() => {
+    try {
+      return localStorage.getItem("bingo18_tx_string_b") || "XXTTXTXXTTXT";
+    } catch (e) {
+      return "XXTTXTXXTTXT";
+    }
+  });
+
+  const [activeStringMode, setActiveStringMode] = useState<"A" | "B">(() => {
+    try {
+      return (localStorage.getItem("bingo18_tx_active_mode") as "A" | "B") || "A";
+    } catch (e) {
+      return "A";
+    }
+  });
+
+  const [useManualStringMode, setUseManualStringMode] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("bingo18_tx_use_manual") !== "false";
+    } catch (e) {
+      return true;
+    }
+  });
+
+  // Save changes to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem("bingo18_tx_string_a", stringA);
+    } catch (e) {}
+  }, [stringA]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("bingo18_tx_string_b", stringB);
+    } catch (e) {}
+  }, [stringB]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("bingo18_tx_active_mode", activeStringMode);
+    } catch (e) {}
+  }, [activeStringMode]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("bingo18_tx_use_manual", String(useManualStringMode));
+    } catch (e) {}
+  }, [useManualStringMode]);
+
+  // Convert T/X String to pseudo draws
+  const convertTXStringToDraws = useCallback((txString: string): Draw[] => {
+    const chars = txString.split("");
+    const draws: Draw[] = [];
+    
+    // Create unique IDs S-10000+i
+    for (let i = chars.length - 1; i >= 0; i--) {
+      const char = chars[i];
+      const isT = char === "T";
+      const numbers = isT ? [4, 5, 5] : [2, 2, 3]; // T holds [4,5,5] (sum 14), X holds [2,2,3] (sum 7)
+      const drawId = String(10000 + i);
+      draws.push({
+        id: drawId,
+        date: `Kỳ tự lập #${drawId}`,
+        numbers,
+        isManual: true,
+      });
+    }
+    return draws;
+  }, []);
 
   const showToast = useCallback(
     (message: string, type: "success" | "info" | "error" = "success") => {
@@ -268,6 +364,15 @@ export default function App() {
     });
   }, [manualData, fetchedData]);
 
+  // Active dataset for calculations (switchable between standard history and manual string of T/X results)
+  const currentDrawHistory = useMemo(() => {
+    if (useManualStringMode) {
+      const activeString = activeStringMode === "A" ? stringA : stringB;
+      return convertTXStringToDraws(activeString);
+    }
+    return combinedData;
+  }, [useManualStringMode, activeStringMode, stringA, stringB, combinedData, convertTXStringToDraws]);
+
   // API call to Gemini has been permanently removed per user request: "Tuyệt đối không sử dụng API bên ngoài cho AI"
   // The system will exclusively use its integrated local mathematical AI model (SiLU MLP, Bayesian, Kalman, AR-EMA, XGBoost)
   // for all pattern recognition and self-reflection!
@@ -283,7 +388,11 @@ export default function App() {
 
   // Save manual list helper
   const saveManualData = useCallback(
-    async (newList: Draw[]) => {
+    async (newListRaw: Draw[]) => {
+      // Bảo vệ tràn bộ nhớ và giới hạn dung lượng lưu trữ (Firestore max 1MB, LocalStorage max 5MB)
+      // Giữ tối đa 1500 kỳ gần nhất để đảm bảo hiệu năng và không lỗi quota
+      const newList = newListRaw.slice(0, 1500);
+      
       setManualData(newList);
       // 1. Save to LocalStorage for safety
       try {
@@ -664,30 +773,6 @@ export default function App() {
     saveManualData(updated);
     showToast(`Đã thêm thủ công kết quả kỳ #${newDraw.id}!`, "success");
 
-    // Instant, synchronous analytics recalculation to ensure 0ms latency on user action
-    const manualIds = new Set(updated.map((m) => String(m.id)));
-    const uniqueFetched = fetchedData.filter(
-      (item) => !manualIds.has(String(item.id)),
-    );
-    const newCombined = [...updated, ...uniqueFetched].sort((a, b) => {
-      const numA = Number(String(a.id).replace(/\D/g, ""));
-      const numB = Number(String(b.id).replace(/\D/g, ""));
-      if (!isNaN(numA) && !isNaN(numB) && numA !== numB) return numB - numA;
-      return String(b.id).localeCompare(String(a.id));
-    });
-
-    setIsCalculating(true);
-    setTimeout(() => {
-      const res = calculateAnalytics(
-        newCombined,
-        "ensemble",
-        arParams,
-        mlpParams,
-      );
-      setAnalytics(res);
-      setIsCalculating(false);
-    }, 10);
-
     // Clear state & Auto-advance ID
     setManualId("");
     setManualNum1(1);
@@ -701,11 +786,8 @@ export default function App() {
     manualNum3,
     combinedData,
     manualData,
-    fetchedData,
     saveManualData,
     showToast,
-    arParams,
-    mlpParams,
   ]);
 
   // Bulk Add Manual Draws (MinerU-inspired Unstructured Data Importer)
@@ -725,31 +807,7 @@ export default function App() {
     const updated = [...filteredNewDraws, ...manualData];
     saveManualData(updated);
     showToast(`Thành công! MinerU-Engine đã trích xuất & thêm ${filteredNewDraws.length} kỳ quay mới.`, "success");
-
-    // Recalculate analytics in background
-    const manualIds = new Set(updated.map((m) => String(m.id)));
-    const uniqueFetched = fetchedData.filter(
-      (item) => !manualIds.has(String(item.id)),
-    );
-    const newCombined = [...updated, ...uniqueFetched].sort((a, b) => {
-      const numA = Number(String(a.id).replace(/\D/g, ""));
-      const numB = Number(String(b.id).replace(/\D/g, ""));
-      if (!isNaN(numA) && !isNaN(numB) && numA !== numB) return numB - numA;
-      return String(b.id).localeCompare(String(a.id));
-    });
-
-    setIsCalculating(true);
-    setTimeout(() => {
-      const res = calculateAnalytics(
-        newCombined,
-        "ensemble",
-        arParams,
-        mlpParams,
-      );
-      setAnalytics(res);
-      setIsCalculating(false);
-    }, 10);
-  }, [combinedData, manualData, fetchedData, saveManualData, showToast, arParams, mlpParams]);
+  }, [combinedData, manualData, saveManualData, showToast]);
 
   // Remove manual draw handler
   const handleRemoveManualData = useCallback(
@@ -759,78 +817,102 @@ export default function App() {
       );
       saveManualData(updated);
       showToast(`Đã gỡ bỏ dữ liệu tự nhập kỳ #${idToRemove}`, "info");
-
-      // Instant, synchronous analytics recalculation to ensure 0ms latency on user action
-      const manualIds = new Set(updated.map((m) => String(m.id)));
-      const uniqueFetched = fetchedData.filter(
-        (item) => !manualIds.has(String(item.id)),
-      );
-      const newCombined = [...updated, ...uniqueFetched].sort((a, b) => {
-        const numA = Number(String(a.id).replace(/\D/g, ""));
-        const numB = Number(String(b.id).replace(/\D/g, ""));
-        if (!isNaN(numA) && !isNaN(numB) && numA !== numB) return numB - numA;
-        return String(b.id).localeCompare(String(a.id));
-      });
-
-      setIsCalculating(true);
-      setTimeout(() => {
-        const res = calculateAnalytics(
-          newCombined,
-          "ensemble",
-          arParams,
-          mlpParams,
-        );
-        setAnalytics(res);
-        setIsCalculating(false);
-      }, 10);
     },
-    [manualData, fetchedData, saveManualData, showToast, arParams, mlpParams],
+    [manualData, saveManualData, showToast],
   );
 
   // Run Quantitative Analysis computations with smart immediate-vs-debounce dispatching
   const [analytics, setAnalytics] = useState<any>(() => {
+    // Initial load check for manual string
+    try {
+      const isManual = localStorage.getItem("bingo18_tx_use_manual") !== "false";
+      if (isManual) {
+        const mode = (localStorage.getItem("bingo18_tx_active_mode") as "A" | "B") || "A";
+        const str = localStorage.getItem(mode === "A" ? "bingo18_tx_string_a" : "bingo18_tx_string_b") || "TXTXTTXTXXTTX";
+        const chars = str.split("");
+        const draws: Draw[] = [];
+        for (let i = chars.length - 1; i >= 0; i--) {
+          const char = chars[i];
+          const isT = char === "T";
+          const numbers = isT ? [4, 5, 5] : [2, 2, 3];
+          const drawId = String(10000 + i);
+          draws.push({ id: drawId, date: `Kỳ tự lập #${drawId}`, numbers, isManual: true });
+        }
+        return calculateAnalytics(draws, "ensemble", arParams, mlpParams);
+      }
+    } catch (e) {}
     return calculateAnalytics(combinedData, "ensemble", arParams, mlpParams);
   });
   const [isCalculating, setIsCalculating] = useState(false);
+  const [isGeminiLoading, setIsGeminiLoading] = useState(false);
 
-  // Track previous combinedData length/content to trigger instant updates on manual input
-  const prevCombinedDataRef = useRef(combinedData);
+  // Track previous currentDrawHistory length/content to trigger instant updates on manual input
+  const prevCombinedDataRef = useRef(currentDrawHistory);
 
   useEffect(() => {
     // Check if the actual draw history has updated (e.g. manual entry added or removed)
-    const isDataChanged = prevCombinedDataRef.current !== combinedData;
-    prevCombinedDataRef.current = combinedData;
+    const isDataChanged = prevCombinedDataRef.current !== currentDrawHistory;
+    prevCombinedDataRef.current = currentDrawHistory;
+
+    const performAnalyticsUpdate = async () => {
+      const res = calculateAnalytics(
+        currentDrawHistory,
+        "ensemble",
+        arParams,
+        mlpParams,
+      );
+      setAnalytics(res);
+      setIsCalculating(false);
+
+      if (res && currentDrawHistory.length > 0) {
+        setIsGeminiLoading(true);
+        try {
+          const { fetchWithRetry } = await import("./utils/network");
+          const apiRes = await fetchWithRetry("/api/gemini-debate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ draws: currentDrawHistory.slice(0, 50), stats: {} }),
+          }, 2, 1000, 15000); // 15 seconds timeout
+          
+          const data = await apiRes.json();
+          if (data && !data.error && data.debateLog) {
+            setAnalytics(prev => {
+              if (!prev) return prev;
+              return {
+                ...prev,
+                prediction: {
+                  ...prev.prediction,
+                  geminiDebateLog: data.debateLog,
+                }
+              };
+            });
+          }
+        } catch (e) {
+          console.error("Lỗi fetch /api/gemini-debate:", e);
+        } finally {
+          setIsGeminiLoading(false);
+        }
+      }
+    };
 
     if (isDataChanged) {
       // 1. Give React a tick to show calculation state
       setIsCalculating(true);
+      hapticFeedback([15, 40, 15]); // AI prediction heavy trigger haptic
       const timer = setTimeout(() => {
-        const res = calculateAnalytics(
-          combinedData,
-          "ensemble",
-          arParams,
-          mlpParams,
-        );
-        setAnalytics(res);
-        setIsCalculating(false);
+        performAnalyticsUpdate();
       }, 10);
       return () => clearTimeout(timer);
     } else {
       // 2. Debounced calculation (150ms delay) when slider parameters are dragged to keep UI ultra-smooth
       setIsCalculating(true);
+      hapticFeedback(10); // Light haptic for slider adjustments
       const timer = setTimeout(() => {
-        const res = calculateAnalytics(
-          combinedData,
-          "ensemble",
-          arParams,
-          mlpParams,
-        );
-        setAnalytics(res);
-        setIsCalculating(false);
+        performAnalyticsUpdate();
       }, 150);
       return () => clearTimeout(timer);
     }
-  }, [combinedData, arParams, mlpParams]);
+  }, [currentDrawHistory, arParams, mlpParams]);
 
   // Filter & Search computation
   const filteredData = useMemo(() => {
@@ -934,9 +1016,34 @@ export default function App() {
               )}
             </div>
 
+            {/* AI Core OS Dashboard Toggle Pill */}
+            <button
+              onClick={() => {
+                hapticFeedback(20);
+                const nextState = !showDashboard;
+                setShowDashboard(nextState);
+                showToast(
+                  nextState
+                    ? "Đã hiển thị bảng giám sát hệ thống AI Core OS!"
+                    : "Đã ẩn bảng giám sát hệ thống AI Core OS.",
+                  "info"
+                );
+              }}
+              className={`flex items-center gap-1.5 px-3 py-2 text-[10px] font-bold uppercase rounded-xl border transition-all active:scale-95 cursor-pointer ${
+                showDashboard
+                  ? "bg-indigo-500/15 text-indigo-400 border-indigo-500/30"
+                  : "bg-slate-950/60 text-slate-500 border-slate-900 hover:text-slate-400"
+              }`}
+              title="Nhấp để bật/tắt hiển thị bảng giám sát AI"
+            >
+              <Cpu className="w-3.5 h-3.5" />
+              <span>Hệ thống AI: {showDashboard ? "BẬT" : "TẮT"}</span>
+            </button>
+
             {/* Auto-Refresh Toggle Pill */}
             <button
               onClick={() => {
+                hapticFeedback(20);
                 const nextState = !autoRefresh;
                 setAutoRefresh(nextState);
                 showToast(
@@ -1018,7 +1125,10 @@ export default function App() {
 
             {/* Sync control button */}
             <button
-              onClick={() => fetchData(false)}
+              onClick={() => {
+                hapticFeedback([20, 20]);
+                fetchData(false);
+              }}
               disabled={isRefreshing}
               className="p-2.5 bg-slate-900 hover:bg-slate-850 text-slate-400 hover:text-slate-200 disabled:opacity-50 border border-slate-800 rounded-xl cursor-pointer transition-all active:scale-95"
               title="Đồng bộ lại dữ liệu tức thời"
@@ -1054,7 +1164,17 @@ export default function App() {
           </div>
         ) : (
           <div className="flex-1 flex flex-col">
-            <AiSystemDashboard />
+            {showDashboard && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.3 }}
+                className="overflow-hidden"
+              >
+                <AiSystemDashboard />
+              </motion.div>
+            )}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
               {/* Left Column: Dự án định lượng */}
               <div className="lg:col-span-5 flex flex-col gap-4">
@@ -1071,45 +1191,61 @@ export default function App() {
                   mlpParams={mlpParams}
                   setMlpParams={setMlpParams}
                   isCalculating={isCalculating}
-                  isGeminiLoading={false}
+                  isGeminiLoading={isGeminiLoading}
                 />
               </div>
 
               {/* Right Column: Kết quả kỳ quay */}
               <div className="lg:col-span-7 flex flex-col gap-4">
-                <div className="flex items-center gap-2">
-                  <List className="w-4 h-4 text-emerald-400" />
-                  <span className="text-xs font-black text-slate-200 uppercase tracking-wider">
-                    Kết quả kỳ quay
-                  </span>
-                </div>
-                <HistoryTab
-                  data={combinedData}
-                  manualData={manualData}
-                  filteredData={filteredData}
-                  currentTableData={currentTableData}
-                  currentPage={currentPage}
-                  totalPages={totalPages}
-                  onPageChange={setCurrentPage}
-                  searchQuery={searchQuery}
-                  setSearchQuery={setSearchQuery}
-                  filterType={filterType}
-                  setFilterType={setFilterType}
-                  showManualForm={showManualForm}
-                  setShowManualForm={setShowManualForm}
-                  manualId={manualId}
-                  setManualId={setManualId}
-                  manualNum1={manualNum1}
-                  setManualNum1={setManualNum1}
-                  manualNum2={manualNum2}
-                  setManualNum2={setManualNum2}
-                  manualNum3={manualNum3}
-                  setManualNum3={setManualNum3}
-                  onAddManualData={handleAddManualData}
-                  onBulkAddManualData={handleBulkAddManualData}
-                  onRemoveManualData={handleRemoveManualData}
-                  cloudSyncStatus={cloudSyncStatus}
+                <ManualStringTab
+                  stringA={stringA}
+                  setStringA={setStringA}
+                  stringB={stringB}
+                  setStringB={setStringB}
+                  activeStringMode={activeStringMode}
+                  setActiveStringMode={setActiveStringMode}
+                  useManualStringMode={useManualStringMode}
+                  setUseManualStringMode={setUseManualStringMode}
+                  onToast={showToast}
                 />
+
+                {!useManualStringMode && (
+                  <div className="flex flex-col gap-4 mt-2 animate-in fade-in slide-in-from-bottom-3 duration-300">
+                    <div className="flex items-center gap-2">
+                      <List className="w-4 h-4 text-emerald-400" />
+                      <span className="text-xs font-black text-slate-200 uppercase tracking-wider">
+                        Bảng Lịch Sử Kỳ Quay Toàn Bộ
+                      </span>
+                    </div>
+                    <HistoryTab
+                      data={combinedData}
+                      manualData={manualData}
+                      filteredData={filteredData}
+                      currentTableData={currentTableData}
+                      currentPage={currentPage}
+                      totalPages={totalPages}
+                      onPageChange={setCurrentPage}
+                      searchQuery={searchQuery}
+                      setSearchQuery={setSearchQuery}
+                      filterType={filterType}
+                      setFilterType={setFilterType}
+                      showManualForm={showManualForm}
+                      setShowManualForm={setShowManualForm}
+                      manualId={manualId}
+                      setManualId={setManualId}
+                      manualNum1={manualNum1}
+                      setManualNum1={setManualNum1}
+                      manualNum2={manualNum2}
+                      setManualNum2={setManualNum2}
+                      manualNum3={manualNum3}
+                      setManualNum3={setManualNum3}
+                      onAddManualData={handleAddManualData}
+                      onBulkAddManualData={handleBulkAddManualData}
+                      onRemoveManualData={handleRemoveManualData}
+                      cloudSyncStatus={cloudSyncStatus}
+                    />
+                  </div>
+                )}
               </div>
             </div>
           </div>

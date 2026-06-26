@@ -110,7 +110,7 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({
       case 1:
         return "col-start-2 row-start-2";
       case 2:
-        return "col-start-1 row-start-1 col-end-2 row-end-2, col-start-3 row-start-3 col-end-4 row-end-4";
+        return "col-start-1 row-start-1, col-start-3 row-start-3";
       case 3:
         return "col-start-1 row-start-1, col-start-2 row-start-2, col-start-3 row-start-3";
       case 4:
@@ -167,7 +167,7 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({
               placeholder="Tìm mã kỳ quay (ví dụ: 12345)..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-slate-950/60 border border-slate-800 rounded-xl py-2.5 pl-9 pr-4 text-slate-200 text-sm focus:outline-none focus:border-indigo-500 transition-colors placeholder:text-slate-600"
+              className="w-full bg-slate-950/60 border border-slate-800 rounded-xl py-2.5 pl-9 pr-4 text-slate-200 text-base md:text-sm focus:outline-none focus:border-indigo-500 transition-colors placeholder:text-slate-600"
             />
           </div>
 
@@ -177,7 +177,7 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({
             <select
               value={filterType}
               onChange={(e) => setFilterType(e.target.value)}
-              className="w-full bg-slate-950/60 border border-slate-800 rounded-xl py-2.5 pl-9 pr-3 text-slate-300 text-xs font-bold focus:outline-none focus:border-indigo-500 transition-colors appearance-none cursor-pointer"
+              className="w-full bg-slate-950/60 border border-slate-800 rounded-xl py-2.5 pl-9 pr-3 text-slate-300 text-base md:text-xs font-bold focus:outline-none focus:border-indigo-500 transition-colors appearance-none cursor-pointer"
             >
               <option value="all">Tất cả Kết Quả</option>
               <option value="tai">Kỳ TÀI (≥ 12đ)</option>
@@ -256,7 +256,7 @@ export const HistoryTab: React.FC<HistoryTabProps> = ({
                   placeholder="Ví dụ: 00985"
                   value={manualId}
                   onChange={(e) => setManualId(e.target.value)}
-                  className="w-full bg-slate-950/80 border border-slate-800 rounded-xl py-2.5 px-3.5 text-slate-200 text-sm font-bold font-mono focus:outline-none focus:border-indigo-500 placeholder:text-slate-700"
+                  className="w-full bg-slate-950/80 border border-slate-800 rounded-xl py-2.5 px-3.5 text-slate-200 text-base md:text-sm font-bold font-mono focus:outline-none focus:border-indigo-500 placeholder:text-slate-700"
                 />
               </div>
 

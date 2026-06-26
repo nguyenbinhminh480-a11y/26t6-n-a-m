@@ -1,0 +1,22 @@
+{
+  "short_name": "Bingo18 Deep-Quant AI",
+  "name": "Bingo18 Deep-Quant AI",
+  "description": "Offline Mathematical AI system for Bingo18 prediction. Optimized for mobile, features separated Data Pipelines, Background Retraining Queues, and Data Drift detection.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#12131a",
+  "theme_color": "#12131a",
+  "icons": [
+    {
+      "src": "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192' width='192' height='192'><rect width='192' height='192' rx='48' fill='%2312131a'/><circle cx='96' cy='96' r='48' fill='none' stroke='%233b82f6' stroke-width='12'/><path d='M96 56 v80 M56 96 h80' stroke='%233b82f6' stroke-width='12' stroke-linecap='round'/></svg>",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    },
+    {
+      "src": "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512' width='512' height='512'><rect width='512' height='512' rx='128' fill='%2312131a'/><circle cx='256' cy='256' r='128' fill='none' stroke='%233b82f6' stroke-width='32'/><path d='M256 140 v232 M140 256 h232' stroke='%233b82f6' stroke-width='32' stroke-linecap='round'/></svg>",
+      "sizes": "512x512",
+      "type": "image/svg+xml"
+    }
+  ]
+}

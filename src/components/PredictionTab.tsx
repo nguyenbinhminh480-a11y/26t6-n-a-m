@@ -214,10 +214,13 @@ export const PredictionTab: React.FC<PredictionTabProps> = ({
                 <Info className="w-3.5 h-3.5 text-indigo-400" /> Trạng thái phân
                 tích mô hình:
               </div>
-              Phân tích quyết định tối ưu đã đồng thuận từ 9 tác nhân thích ứng.
-              Toàn bộ các hệ thống tính toán (Markov, AR-EMA, MLP Network, Data
-              Drift PSI) đang tự vận hành ngầm 24/7 để cập nhật quyết định tiếp
-              theo.
+              {analytics.prediction.geminiDebateLog ? (
+                <div className="whitespace-pre-wrap font-mono text-[10px] text-indigo-200/80">
+                  {analytics.prediction.geminiDebateLog}
+                </div>
+              ) : (
+                "Phân tích quyết định tối ưu đã đồng thuận từ 9 tác nhân thích ứng. Toàn bộ các hệ thống tính toán (Markov, AR-EMA, MLP Network, Data Drift PSI) đang tự vận hành ngầm 24/7 để cập nhật quyết định tiếp theo."
+              )}
             </div>
           </div>
 
@@ -267,10 +270,10 @@ export const PredictionTab: React.FC<PredictionTabProps> = ({
           </div>
 
           {/* Navigation tabs */}
-          <div className="flex items-center gap-1 bg-slate-950/60 p-1 rounded-xl border border-slate-800/60 text-xs">
+          <div className="flex flex-wrap sm:flex-nowrap items-center gap-1 bg-slate-950/60 p-1 rounded-xl border border-slate-800/60 text-xs w-full sm:w-auto">
             <button
               onClick={() => setActiveTraceTab("orchestrator")}
-              className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
+              className={`flex-1 sm:flex-initial px-3 py-2.5 sm:py-1.5 min-h-[44px] sm:min-h-[36px] rounded-lg font-bold transition-all flex items-center justify-center ${
                 activeTraceTab === "orchestrator"
                   ? "bg-indigo-600 text-slate-100 shadow-sm"
                   : "text-slate-400 hover:text-slate-200"
@@ -280,7 +283,7 @@ export const PredictionTab: React.FC<PredictionTabProps> = ({
             </button>
             <button
               onClick={() => setActiveTraceTab("tools")}
-              className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
+              className={`flex-1 sm:flex-initial px-3 py-2.5 sm:py-1.5 min-h-[44px] sm:min-h-[36px] rounded-lg font-bold transition-all flex items-center justify-center ${
                 activeTraceTab === "tools"
                   ? "bg-indigo-600 text-slate-100 shadow-sm"
                   : "text-slate-400 hover:text-slate-200"
@@ -290,7 +293,7 @@ export const PredictionTab: React.FC<PredictionTabProps> = ({
             </button>
             <button
               onClick={() => setActiveTraceTab("telemetry")}
-              className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
+              className={`flex-1 sm:flex-initial px-3 py-2.5 sm:py-1.5 min-h-[44px] sm:min-h-[36px] rounded-lg font-bold transition-all flex items-center justify-center ${
                 activeTraceTab === "telemetry"
                   ? "bg-indigo-600 text-slate-100 shadow-sm"
                   : "text-slate-400 hover:text-slate-200"

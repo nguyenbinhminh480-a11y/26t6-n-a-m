@@ -3,7 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 import { getDrawSum } from "../utils/helpers";
-
+import { RegressionTestEngine, RegressionReport } from "../utils/regressionTestEngine";
+import { AIVersionControlSystem, AIBrainVersion } from "../utils/aiVersionControl";
+import { AIChangelogManager, ChangelogEntry } from "../utils/aiChangelog";
 
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
@@ -85,6 +87,16 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
       "  at DBConnection (password=secretPass1234@firebaseio.com/db)",
   );
   const [sandboxOutput, setSandboxOutput] = useState<string>("");
+
+  // AI Regression, Versioning, and Changelog states
+  const [regressionReport, setRegressionReport] = useState<RegressionReport | null>(null);
+  const [isTestingRegression, setIsTestingRegression] = useState<boolean>(false);
+  const [brainVersions, setBrainVersions] = useState<AIBrainVersion[]>([]);
+  const [activeVersionId, setActiveVersionId] = useState<string>("");
+  const [newSnapshotName, setNewSnapshotName] = useState<string>("");
+  const [newSnapshotDesc, setNewSnapshotDesc] = useState<string>("");
+  const [changelogEntries, setChangelogEntries] = useState<ChangelogEntry[]>([]);
+  const [autoGuardLog, setAutoGuardLog] = useState<string>("");
 
   // 3. System Health Metrics
   const [currentTimeMs, setCurrentTimeMs] = useState<number>(Date.now());
@@ -439,6 +451,95 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
     }
     const sanitized = SecuritySandbox.sanitizeErrorMessage(sandboxInput);
     setSandboxOutput(sanitized);
+  };
+
+  // Khởi tạo và tải dữ liệu AI Systems
+  useEffect(() => {
+    setBrainVersions(AIVersionControlSystem.getAllVersions());
+    setActiveVersionId(AIVersionControlSystem.getActiveVersionId());
+    setChangelogEntries(AIChangelogManager.getEntries());
+    // Chạy kiểm tra hồi quy mặc định ban đầu
+    const report = RegressionTestEngine.runAllTests();
+    setRegressionReport(report);
+  }, []);
+
+  const handleRunRegressionTests = () => {
+    setIsTestingRegression(true);
+    setTimeout(() => {
+      const report = RegressionTestEngine.runAllTests();
+      setRegressionReport(report);
+      setIsTestingRegression(false);
+      
+      // Ghi nhận lịch sử kiểm tra an toàn
+      const statusText = report.passed ? "VƯỢT QUA (PASS)" : "THẤT BẠI (FAIL)";
+      console.log(`[Regression Test Run] ${statusText} - ${report.passedCount}/${report.totalTests} tests passed in ${report.durationMs.toFixed(1)}ms`);
+    }, 1000);
+  };
+
+  const handleRollback = (versionId: string) => {
+    const res = AIVersionControlSystem.rollbackToVersion(versionId);
+    if (res.success) {
+      setActiveVersionId(AIVersionControlSystem.getActiveVersionId());
+      setBrainVersions(AIVersionControlSystem.getAllVersions());
+      // Re-run regression tests on the rolled back version to verify integrity
+      const report = RegressionTestEngine.runAllTests();
+      setRegressionReport(report);
+    }
+  };
+
+  const handleSaveBrainSnapshot = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newSnapshotName.trim()) return;
+
+    const currentWeights = { ...aiCEO.adaptiveWeights.agentWeights };
+    const currentHyperparams = {
+      learningRate: 0.01,
+      mlpEpochs: 300,
+      transformerLags: 8,
+      moeRoutingActive: true,
+      latentAttentionDim: 2,
+    };
+    const currentPrompts = {
+      systemDirective: "Tận dụng triết lý Multi-head Latent Attention (MLA) của DeepSeek-V3 để nén KV Cache.",
+      critiquePrompt: "Phản biện sâu sắc của Charlie Munger kết hợp phân phối Dirichlet.",
+    };
+
+    const newVer = AIVersionControlSystem.saveVersion(
+      newSnapshotName,
+      newSnapshotDesc || "Snapshot tùy chỉnh được lưu trữ thủ công bởi Quản trị viên.",
+      currentWeights,
+      currentHyperparams,
+      currentPrompts
+    );
+
+    setBrainVersions(AIVersionControlSystem.getAllVersions());
+    setActiveVersionId(newVer.id);
+    setNewSnapshotName("");
+    setNewSnapshotDesc("");
+    
+    // Tự động append vào CHANGELOG động
+    AIChangelogManager.addEntry(
+      `v_custom_${Date.now().toString().slice(-4)}`,
+      `Chụp nhanh cấu trúc Brain: ${newSnapshotName}`,
+      [`Lưu trữ snapshot trọng số thích ứng của Hội đồng phản biện: ${newSnapshotName}`],
+      ["Đã cập nhật trạng thái hoạt động hiện thời vào registry."]
+    );
+    setChangelogEntries(AIChangelogManager.getEntries());
+  };
+
+  const handleTriggerAutoGuard = () => {
+    const res = AIVersionControlSystem.runAutoGuardCheckAndFix();
+    setAutoGuardLog(res.log);
+    setActiveVersionId(AIVersionControlSystem.getActiveVersionId());
+    setBrainVersions(AIVersionControlSystem.getAllVersions());
+    
+    // Refresh regression report
+    const report = RegressionTestEngine.runAllTests();
+    setRegressionReport(report);
+    
+    setTimeout(() => {
+      setAutoGuardLog("");
+    }, 6000);
   };
 
   // Sơ đồ thống kê tĩnh về độ tuân thủ mã nguồn sạch (Clean Code / SOLID / Security)
@@ -1316,7 +1417,7 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
                     id="worker-model-select"
                     value={selectedModel}
                     onChange={(e) => setSelectedModel(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 text-slate-200 font-bold focus:outline-none focus:border-indigo-500"
+                    className="w-full bg-slate-900 border border-slate-800 text-base md:text-xs rounded-lg p-2 text-slate-200 font-bold focus:outline-none focus:border-indigo-500"
                   >
                     <option value="mlp">MLP Neural Network</option>
                     <option value="ar">Autoregressive EMA</option>
@@ -1337,7 +1438,7 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
                         Math.max(10, Math.min(500, Number(e.target.value))),
                       )
                     }
-                    className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 text-slate-200 font-bold focus:outline-none focus:border-indigo-500 font-mono"
+                    className="w-full bg-slate-900 border border-slate-800 text-base md:text-xs rounded-lg p-2 text-slate-200 font-bold focus:outline-none focus:border-indigo-500 font-mono"
                   />
                 </div>
               </div>
@@ -1668,6 +1769,261 @@ export const MaintenanceTab: React.FC<MaintenanceTabProps> = ({
               </div>
             </div>
           )}
+        </div>
+
+        {/* =========================================================================
+          PHÂN HỆ QUẢN TRỊ TOÀN DIỆN AI (REGRESSION TESTS, VERSIONING, AUTO-GUARD, CHANGELOG)
+          ========================================================================= */}
+        <div className="lg:col-span-12 grid grid-cols-1 lg:grid-cols-12 gap-6" id="ai-systems-supervision">
+          {/* 1. Regression Test & Auto-Guard Control (Left Column: 6 cols) */}
+          <div className="lg:col-span-6 bg-slate-900/40 backdrop-blur-md p-6 rounded-2xl border border-slate-800 shadow-lg flex flex-col gap-6">
+            <div className="flex items-center justify-between border-b border-slate-850/60 pb-3">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-emerald-400" />
+                <h3 className="text-slate-100 font-extrabold text-sm tracking-wide">
+                  Kiểm Thử Hồi Quy AI (Regression Tests)
+                </h3>
+              </div>
+              <button
+                onClick={handleRunRegressionTests}
+                disabled={isTestingRegression}
+                className="flex items-center gap-1.5 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 disabled:from-slate-850 disabled:to-slate-850 text-slate-950 text-[10px] font-extrabold px-3.5 py-2 rounded-lg cursor-pointer transition-all active:scale-[0.98] disabled:cursor-not-allowed"
+              >
+                {isTestingRegression ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-slate-950" />
+                    Đang Chạy Thử...
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-3.5 h-3.5 fill-current text-slate-950" />
+                    Chạy Toàn Bộ Test
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* Test Engine Status Banner */}
+            {regressionReport && (
+              <div className={`p-4 rounded-xl border ${regressionReport.passed ? "bg-emerald-500/5 border-emerald-500/20" : "bg-rose-500/5 border-rose-500/20"} flex items-center justify-between`}>
+                <div className="flex items-start gap-3">
+                  <div className={`p-2 rounded-lg ${regressionReport.passed ? "bg-emerald-500/10 text-emerald-400" : "bg-rose-500/10 text-rose-400"}`}>
+                    <Shield className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-200">
+                      Trạng Thái Hồi Quy: {regressionReport.passed ? "AN TOÀN TUYỆT ĐỐI" : "PHÁT HIỆN LỖI"}
+                    </h4>
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      Hoàn thành {regressionReport.passedCount}/{regressionReport.totalTests} bài test trong {regressionReport.durationMs.toFixed(1)}ms.
+                    </p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className={`text-xs font-mono font-black px-2.5 py-1 rounded-md ${regressionReport.passed ? "bg-emerald-500/10 text-emerald-400" : "bg-rose-500/10 text-rose-400"}`}>
+                    {regressionReport.passed ? "PASS" : "FAIL"}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* List of Test cases */}
+            <div className="space-y-2.5 max-h-52 overflow-y-auto pr-1">
+              {regressionReport?.results.map((r, i) => (
+                <div key={i} className="p-3 bg-slate-950/30 rounded-xl border border-slate-850/60 flex items-center justify-between text-xs">
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[9px] text-slate-500 uppercase tracking-wider font-bold">
+                        {r.suiteName}
+                      </span>
+                      <span className="text-slate-600">•</span>
+                      <span className="font-bold text-slate-300">{r.testName}</span>
+                    </div>
+                    {r.message && <p className="text-[9.5px] text-rose-400 font-medium">{r.message}</p>}
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-[9px] font-mono text-slate-500">{r.durationMs.toFixed(1)}ms</span>
+                    <span className={`w-2 h-2 rounded-full ${r.status === "PASSED" ? "bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.5)]" : "bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.5)]"}`} />
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* AutoGuard Defensive Shield Panel */}
+            <div className="bg-slate-950/50 p-4 rounded-xl border border-slate-850 flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <ShieldAlert className="w-4 h-4 text-amber-500 animate-pulse" />
+                  <span className="text-xs font-extrabold text-slate-200">
+                    Cơ Chế Phòng Vệ Tự Động (AutoGuard Shield)
+                  </span>
+                </div>
+                <button
+                  onClick={handleTriggerAutoGuard}
+                  className="bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/20 text-amber-400 text-[10px] font-bold px-3 py-1.5 rounded-lg cursor-pointer transition-all active:scale-[0.98]"
+                >
+                  Rà Soát & Khắc Phục
+                </button>
+              </div>
+              <p className="text-[10px] text-slate-400 leading-relaxed">
+                Tự động rà soát toàn bộ các bài kiểm tra hồi quy sau mỗi lần học thuật deep-ensemble. Nếu có lỗi suy thoái hoặc rò rỉ gradient, hệ thống tự kích hoạt rollback về phiên bản Brain an toàn gần nhất.
+              </p>
+              {autoGuardLog && (
+                <div className="p-2.5 bg-amber-500/5 rounded-lg border border-amber-500/10 text-[9.5px] text-amber-400 font-mono leading-normal">
+                  {autoGuardLog}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* 2. AI Brain Version Control (Right Column: 6 cols) */}
+          <div className="lg:col-span-6 bg-slate-900/40 backdrop-blur-md p-6 rounded-2xl border border-slate-800 shadow-lg flex flex-col gap-6">
+            <div className="flex items-center justify-between border-b border-slate-850/60 pb-3">
+              <div className="flex items-center gap-2">
+                <Database className="w-5 h-5 text-indigo-400" />
+                <h3 className="text-slate-100 font-extrabold text-sm tracking-wide">
+                  Phiên Bản Bộ Não AI (Brain Version Registry)
+                </h3>
+              </div>
+              <span className="text-[10px] bg-indigo-500/15 border border-indigo-500/20 text-indigo-300 font-mono font-bold px-2 py-0.5 rounded-md">
+                Active: {brainVersions.find(v => v.id === activeVersionId)?.versionName.split(" ")[0] || "N/A"}
+              </span>
+            </div>
+
+            {/* List of active brain versions */}
+            <div className="space-y-3 max-h-52 overflow-y-auto pr-1">
+              {brainVersions.map((v) => {
+                const isActive = v.id === activeVersionId;
+                return (
+                  <div
+                    key={v.id}
+                    className={`p-3 rounded-xl border transition-all ${isActive ? "bg-indigo-500/5 border-indigo-500/40 shadow-sm" : "bg-slate-950/20 border-slate-850/60"}`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <h4 className="text-xs font-black text-slate-100 flex items-center gap-1.5">
+                          {v.versionName}
+                          {isActive && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-ping" />
+                          )}
+                        </h4>
+                        <p className="text-[10px] text-slate-400 line-clamp-1">{v.description}</p>
+                      </div>
+                      {!isActive ? (
+                        <button
+                          onClick={() => handleRollback(v.id)}
+                          className="bg-indigo-600 hover:bg-indigo-500 text-slate-100 text-[10px] font-bold px-2.5 py-1.5 rounded-md cursor-pointer transition-all active:scale-95"
+                        >
+                          Rollback
+                        </button>
+                      ) : (
+                        <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-wider font-mono px-2 py-1 bg-emerald-500/15 rounded border border-emerald-500/20">
+                          Active
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 mt-2 pt-2 border-t border-slate-850/30 text-[9px] text-slate-500 font-mono">
+                      <div>
+                        Acc Check: <span className="text-slate-300 font-bold">{v.performance.passedCount}/{v.performance.passedCount + v.performance.failedCount}</span>
+                      </div>
+                      <div className="text-center">
+                        Latency: <span className="text-slate-300 font-bold">{v.performance.durationMs}ms</span>
+                      </div>
+                      <div className="text-right">
+                        MoE: <span className={v.hyperparameters.moeRoutingActive ? "text-emerald-400 font-bold" : "text-slate-500"}>{v.hyperparameters.moeRoutingActive ? "ON" : "OFF"}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Create manual checkpoint */}
+            <form onSubmit={handleSaveBrainSnapshot} className="bg-slate-950/40 p-4 rounded-xl border border-slate-850 flex flex-col gap-3">
+              <span className="text-xs font-extrabold text-slate-200">
+                Chụp nhanh bộ não (Create Brain Snapshot)
+              </span>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <input
+                  type="text"
+                  placeholder="Tên phiên bản (VD: Custom v1.3.1)"
+                  value={newSnapshotName}
+                  onChange={(e) => setNewSnapshotName(e.target.value)}
+                  className="bg-slate-900 border border-slate-800 text-slate-200 text-xs px-3 py-2 rounded-lg focus:outline-none focus:border-indigo-500"
+                />
+                <input
+                  type="text"
+                  placeholder="Ghi chú cấu trúc weights..."
+                  value={newSnapshotDesc}
+                  onChange={(e) => setNewSnapshotDesc(e.target.value)}
+                  className="bg-slate-900 border border-slate-800 text-slate-200 text-xs px-3 py-2 rounded-lg focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={!newSnapshotName.trim()}
+                className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 text-slate-100 text-xs font-bold py-2 rounded-lg transition-all cursor-pointer active:scale-[0.98] disabled:cursor-not-allowed"
+              >
+                Ghi nhớ Checkpoint Bộ Não
+              </button>
+            </form>
+          </div>
+
+          {/* 3. AI System Changelog View (Full-width: 12 cols) */}
+          <div className="lg:col-span-12 bg-slate-900/40 backdrop-blur-md p-6 rounded-2xl border border-slate-800 shadow-lg flex flex-col gap-5">
+            <div className="flex items-center gap-2 border-b border-slate-850/60 pb-3">
+              <FileText className="w-5 h-5 text-indigo-400" />
+              <div>
+                <h3 className="text-slate-100 font-extrabold text-sm tracking-wide">
+                  Nhật Ký Phát Triển Hệ Thống AI (AI System CHANGELOG)
+                </h3>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Lịch sử nâng cấp cấu trúc toán học, tối ưu MLA, và cải tiến mô hình tự học không nghẽn luồng.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 max-h-72 overflow-y-auto pr-1">
+              {changelogEntries.map((entry, idx) => (
+                <div key={idx} className="p-4 bg-slate-950/30 rounded-xl border border-slate-850 flex flex-col gap-3 hover:border-indigo-500/20 transition-all">
+                  <div className="flex items-center justify-between border-b border-slate-850/40 pb-2">
+                    <span className="text-xs font-black text-indigo-400 uppercase tracking-wider font-mono">
+                      {entry.version}
+                    </span>
+                    <span className="text-[10px] text-slate-500 font-medium font-mono">
+                      {entry.date}
+                    </span>
+                  </div>
+                  <div className="flex-1 space-y-2">
+                    <h4 className="text-xs font-extrabold text-slate-200">{entry.title}</h4>
+                    <div className="space-y-1.5 text-[10px] leading-relaxed text-slate-400">
+                      {entry.changes.added.length > 0 && (
+                        <div>
+                          <span className="text-emerald-400 font-bold block mb-0.5">Added:</span>
+                          <ul className="list-disc list-inside space-y-0.5 pl-1 text-[9.5px]">
+                            {entry.changes.added.map((add, i) => (
+                              <li key={i} className="line-clamp-2">{add}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {entry.changes.improved.length > 0 && (
+                        <div>
+                          <span className="text-indigo-400 font-bold block mb-0.5">Improved:</span>
+                          <ul className="list-disc list-inside space-y-0.5 pl-1 text-[9.5px]">
+                            {entry.changes.improved.map((imp, i) => (
+                              <li key={i} className="line-clamp-2">{imp}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     </div>

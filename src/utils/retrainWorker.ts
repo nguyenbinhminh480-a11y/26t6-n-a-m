@@ -4,6 +4,10 @@ import { runMLPClassifier, runARForecast, runLSTMForecast, runXGBoostForecast } 
 import { getSumType } from "./predictor";
 
 self.onmessage = (e: MessageEvent) => {
+  if (e.data && e.data.type === "PING") {
+    self.postMessage({ type: "PONG" });
+    return;
+  }
   const { jobId, modelId, draws, config } = e.data;
   try {
     const pipeline = new DataPipeline();

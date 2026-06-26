@@ -16,10 +16,15 @@ export const fetchWithRetry = async (
   url: string,
   options?: RequestInit,
   retries: number = 3,
-  backoffMs: number = 1000
+  backoffMs: number = 1000,
+  timeoutMs: number = 8000 // 8s timeout cho thiết bị di động
 ): Promise<Response> => {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  
   try {
-    const res = await fetch(url, options);
+    const res = await fetch(url, { ...options, signal: controller.signal });
+    clearTimeout(id);
     if (!res.ok) {
       if (res.status === 429 || res.status >= 500) {
         throw new Error(`Server returned ${res.status}`);
@@ -27,10 +32,11 @@ export const fetchWithRetry = async (
     }
     return res;
   } catch (err: any) {
+    clearTimeout(id);
     if (retries > 0) {
       console.warn(`[Sync Warning] Lỗi kết nối (${err.message}). Thử lại sau ${backoffMs}ms... (Còn ${retries} lần)`);
       await new Promise((resolve) => setTimeout(resolve, backoffMs));
-      return fetchWithRetry(url, options, retries - 1, backoffMs * 2);
+      return fetchWithRetry(url, options, retries - 1, backoffMs * 2, timeoutMs);
     }
     throw new Error(`[Sync Error] Không thể kết nối sau nhiều lần thử: ${err.message}`);
   }

@@ -252,8 +252,54 @@ export class BackgroundRetrainingQueue {
         const configStr = localStorage.getItem("ai_pipeline_config");
         const draws = rawDraws ? JSON.parse(rawDraws) : [];
 
+        let hasPonged = false;
+        let progressInterval: any = null;
+
+        const pingTimeout = setTimeout(() => {
+          if (!hasPonged) {
+            console.warn("[Worker Timeout] Web Worker failed to PONG within 800ms. Aborting and switching to Cooperative Scheduler.");
+            worker.terminate();
+            if (progressInterval) clearInterval(progressInterval);
+            job.logs.push(`[Worker Warning] Web Worker không phản hồi (CORS/Sandbox limit). Chuyển sang Công cụ Điều phối Hợp tác Ngầm (Cooperative)...`);
+            this.executeJobFallback(job);
+          }
+        }, 800);
+
         worker.onmessage = (e) => {
+          if (e.data && e.data.type === "PONG") {
+            hasPonged = true;
+            clearTimeout(pingTimeout);
+            job.logs.push(`[Worker] Khởi tạo Web Worker vật lý thành công. Bắt đầu tác vụ nền...`);
+            this.notifySubscribers(job);
+            
+            // Now start actual training
+            worker.postMessage({
+              jobId: job.id,
+              modelId: job.modelId,
+              draws: draws,
+              config: configStr
+            });
+
+            // Start progress simulation only when worker is confirmed active
+            const stepSize = Math.max(5, Math.floor(job.epochTotal / 20));
+            progressInterval = setInterval(() => {
+               if (job.status !== "RUNNING") {
+                  clearInterval(progressInterval);
+                  return;
+               }
+               if (job.epochCompleted < job.epochTotal - stepSize) {
+                  job.epochCompleted += stepSize;
+                  job.progress = Math.round((job.epochCompleted / job.epochTotal) * 100);
+                  job.logs.push(`[Huấn luyện] Hoàn thành Epoch ${job.epochCompleted}/${job.epochTotal} (${job.progress}%). Cập nhật hệ số học.`);
+                  this.notifySubscribers(job);
+               }
+            }, 800);
+            return;
+          }
+
           const { status, error, newConfig } = e.data;
+          if (progressInterval) clearInterval(progressInterval);
+
           if (status === "COMPLETED") {
             job.status = "COMPLETED";
             job.progress = 100;
@@ -288,27 +334,8 @@ export class BackgroundRetrainingQueue {
           this.checkAndProcess();
         };
 
-        worker.postMessage({
-          jobId: job.id,
-          modelId: job.modelId,
-          draws: draws,
-          config: configStr
-        });
-        
-        // Simulating progress while worker runs
-        const stepSize = Math.max(5, Math.floor(job.epochTotal / 20));
-        const progressInterval = setInterval(() => {
-           if (job.status !== "RUNNING") {
-              clearInterval(progressInterval);
-              return;
-           }
-           if (job.epochCompleted < job.epochTotal - stepSize) {
-              job.epochCompleted += stepSize;
-              job.progress = Math.round((job.epochCompleted / job.epochTotal) * 100);
-              job.logs.push(`[Huấn luyện] Hoàn thành Epoch ${job.epochCompleted}/${job.epochTotal} (${job.progress}%). Cập nhật hệ số học.`);
-              this.notifySubscribers(job);
-           }
-        }, 800);
+        // Send PING immediately to check if worker loaded correctly
+        worker.postMessage({ type: "PING" });
         
       } else {
         // Fallback if worker not supported

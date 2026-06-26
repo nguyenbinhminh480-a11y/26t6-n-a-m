@@ -23,6 +23,9 @@ export interface PerformanceMetric {
     isMobile: boolean;
     batteryLevel?: number;
     estimatedMemoryMb?: number;
+    jsHeapUsedMb?: number;  // Dung lượng heap thực tế đã sử dụng (Megabytes)
+    jsHeapTotalMb?: number; // Tổng dung lượng heap được cấp phát
+    jsHeapLimitMb?: number; // Giới hạn tối đa của heap size
   };
   optimizationApplied: string; // Tình trạng tối ưu hóa hiện tại
 }
@@ -78,6 +81,11 @@ class BottomSystemProfiler {
       request.onsuccess = (event: any) => {
         this.db = event.target.result;
         this.cleanupOldLogs(); // Dọn dẹp logs cũ sau khi khởi động thành công
+        
+        // Tác vụ nền: Tự động chạy GC định kỳ mỗi 5 phút để dọn dẹp IndexedDB (Không làm phiền UI)
+        setInterval(() => {
+          this.cleanupOldLogs();
+        }, 5 * 60 * 1000);
       };
 
       request.onerror = (event: any) => {
@@ -120,7 +128,13 @@ class BottomSystemProfiler {
         const transaction = this.db.transaction([this.storeName], "readwrite");
         const store = transaction.objectStore(this.storeName);
 
-        const memory = (navigator as any).deviceMemory || 0; // Hỗ trợ trên Chrome/iOS-Safari tùy bản
+        const deviceMemory = (navigator as any).deviceMemory || 0; // Hỗ trợ trên Chrome/iOS-Safari tùy bản
+        
+        // Đo đạc heap memory bằng performance.memory (được hỗ trợ trên Chromium và một số WebKit engines)
+        const perfMemory = (performance as any).memory;
+        const jsHeapUsedMb = perfMemory ? Number((perfMemory.usedJSHeapSize / (1024 * 1024)).toFixed(2)) : undefined;
+        const jsHeapTotalMb = perfMemory ? Number((perfMemory.totalJSHeapSize / (1024 * 1024)).toFixed(2)) : undefined;
+        const jsHeapLimitMb = perfMemory ? Number((perfMemory.jsHeapSizeLimit / (1024 * 1024)).toFixed(2)) : undefined;
 
         const metric: PerformanceMetric = {
           timestamp: Date.now(),
@@ -128,7 +142,10 @@ class BottomSystemProfiler {
           durationMs: Number(durationMs.toFixed(2)),
           deviceState: {
             isMobile: this.isMobileDevice,
-            estimatedMemoryMb: memory ? memory * 1024 : undefined
+            estimatedMemoryMb: deviceMemory ? deviceMemory * 1024 : undefined,
+            jsHeapUsedMb,
+            jsHeapTotalMb,
+            jsHeapLimitMb
           },
           optimizationApplied: this.getOptimizationLevel()
         };

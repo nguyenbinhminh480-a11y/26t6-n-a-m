@@ -61,6 +61,7 @@ import { PraisonMultiAgentOrchestrator } from "./praisonMultiAgentOrchestrator";
 import { SecuritySandbox } from "./securitySandbox";
 import { deviceProfiler } from "./hardwareProfiler";
 import { bottomProfiler } from "./bottomSystemProfiler";
+import { ruvAgentRouter } from "./ruvAgentRouter";
 
 class GenericModelAgent extends BasePredictiveAgent {
   private predictionFn: (history: Draw[]) => any;
@@ -522,7 +523,8 @@ const calculatePredictionSortino = (returns: number[]): number => {
   if (downsideStdDev === 0) {
     return mean > 0 ? 5.0 : 0;
   }
-  return mean / downsideStdDev;
+  const sortino = mean / downsideStdDev;
+  return isNaN(sortino) ? 0 : sortino;
 };
 
 const analyticsCache = new Map<string, any>();
@@ -2014,11 +2016,26 @@ export const calculateAnalytics = (
       activeConfidence
     );
 
-    activeScoreTai = praisonResult.finalScores.TAI;
-    activeScoreXiu = praisonResult.finalScores.XIU;
-    activeScoreHoa = praisonResult.finalScores.HOA;
+    // TẠI SAO (Why): Tích hợp Ruv Semantic Micro-Agent Router & Memory để định tuyến thông minh,
+    // loại bỏ thiên lệch cục bộ (Data Leakage & Overfitting Mitigation) và tối ưu hóa tài nguyên phần cứng.
+    const ruvRouting = ruvAgentRouter.routeAndSolve(chronological);
+    
+    // Hòa trộn kết quả: 75% PraisonAI Consensus + 25% Ruv Dynamic Semantic Routing
+    activeScoreTai = Number((praisonResult.finalScores.TAI * 0.75 + ruvRouting.routedScores.TAI * 0.25).toFixed(1));
+    activeScoreXiu = Number((praisonResult.finalScores.XIU * 0.75 + ruvRouting.routedScores.XIU * 0.25).toFixed(1));
+    activeScoreHoa = Number((praisonResult.finalScores.HOA * 0.75 + ruvRouting.routedScores.HOA * 0.25).toFixed(1));
     activeConfidence = praisonResult.finalConfidence;
-    activeDetectedPattern = `Tự trị AI (Autonomous Mobile CEO) - Chiến lược dẫn dắt: ${aiCeoDecision.topStrategy} | PraisonAI: ${praisonResult.critiqueComment}`;
+    // TẠI SAO (Why): Trích xuất các Chuyên gia được định tuyến (Routed Experts) đang hoạt động từ DeepSeek-MoE
+    const moeActiveExperts = aiCeoDecision.activeRoutedExperts
+      ? aiCeoDecision.activeRoutedExperts.map((id: string) => id.replace("agent_", "").toUpperCase()).join(", ")
+      : "";
+    activeDetectedPattern = `[DeepSeek-MoE Active: Shared + ${moeActiveExperts}] | Tự trị AI (Autonomous Mobile CEO) - Chiến lược: ${aiCeoDecision.topStrategy} | PraisonAI: ${praisonResult.critiqueComment} | RuvNode: ${ruvRouting.bestAgentId}`;
+
+    // Lưu giữ quyết định được chọn vào bộ nhớ Stateful Memory phục vụ cho các vòng lặp sau
+    const selectedDecision: string = activeScoreTai > activeScoreXiu && activeScoreTai > activeScoreHoa
+      ? "TAI"
+      : (activeScoreXiu > activeScoreTai && activeScoreXiu > activeScoreHoa ? "XIU" : "HOA");
+    ruvAgentRouter.commitToMemory(chronological, { TAI: activeScoreTai, XIU: activeScoreXiu, HOA: activeScoreHoa }, selectedDecision, activeConfidence);
 
     // Common Kelly Sizing & Risk profile based on the active primary selection
     const activeMaxScore = Math.max(
