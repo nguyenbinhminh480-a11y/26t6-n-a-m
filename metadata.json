@@ -1,0 +1,8 @@
+{
+  "name": "Bingo18 Deep-Quant AI",
+  "description": "Offline Mathematical AI system for Bingo18 prediction. Optimized for mobile, features separated Data Pipelines, Background Retraining Queues, and Data Drift detection.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
